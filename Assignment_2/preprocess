@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+#
+# File:     preprocess
+# Author:   Tao Hu
+# Date:     12/05/2023
+#
+# Purpose:  Performs data cleaning on the input .tsv file. The output file will 
+#           have rows with erroneous data removed, Location and summary columns 
+#           dropped and the Date_of_Breach column broken into 2 new columns, 
+#           month and year.
+#           The output file content will be send to the standard output.
+#
+# Erroneous data checks:
+#           State:
+#               must consist of only 2 uppercase alphabet letters
+#           Date_of_Breach:
+#               must be in format "m/d/y"
+#                   m - length of 1 or 2 digits between 1 and 12 and can start
+#                       with a 0 e.g 01, 02, 1, 2, 12.
+#                   d - length of 1 or 2 digits between 1 and 31 and can start
+#                       with a 0 e.g 01, 02, 1, 2, 31.
+#                   y - length of 1, 2 or 4 digits
+#                       year in 4 digit form will be between 1980 and 2079 so 
+#                       it means 97 becomes 1997, 81 becomes 1981, 34 becomes 
+#                       2034, 49 becomes 2049 and 79 becomes 2079.
+#                       4 digits must not start with a 0 and also start with 
+#                       2 digits must be between 0 and 99, can start with a 0 
+#                       and will be assumed to be in the 2000s. e.g 00, 01, 12
+#                       becomes 2000, 2001, 2012
+#                       1 digits must be between 0 and 9, to be assumed in 2000s
+#                        , e.g 0, 1, 2 becomes 2000, 20001, 2002
+#           Individusals_Affected:
+#               must be a valid integer value greater than 0
+#           All other fields except Summary:
+#               must be a string that is not empty, e.g NA, None, null
+#               That is the minimum number of non empty values of a row must be 
+#               at least 6(that the summary is empty).
+#
+# Location where checked:
+#   Name_of_Covered_Entity                in preprocess_awk (string not empty)
+#   State                                 in preprocess using sed (two captial 
+#                                         letter not empty)
+#   Individuals_Affected                  in preprocess_awk (int >= 0 not empty)
+#   Date_of_Breach                        in preprocess using sed (in correct
+#                                         date format not empty)
+#   Type_of_Breach                        in preprocess_awk (string not empty)
+#   Location_of_Breached_Information      in preprocess_awk (string not empty)
+#   Summary                               no checks (can be empty) since last 
+#                                         field
+
+USAGE="
+Usage:      ./preprocess <file>
+            ./preprocess -h
+
+-h          Displays the usage of this script
+
+file:       A tsv file, with a valid header described as below and data 
+            corresponding to the headers. As a tsv file, each field including 
+            the field names in the header are expected to be separated by a tab.
+            This is the file where the data cleaning will be applied on
+            
+            HEADER                                DATATYPE
+            Name_of_Covered_Entity                -String
+            State                                 -String of 2 captial letter
+            Individuals_Affected                  -Integer
+            Date_of_Breach                        -In d/m/y format
+            Type_of_Breach                        -String
+            Location_of_Breached_Information      -String
+            Summary                               -String
+"
+
+# The anti bugging for both the preprocess script and breaches_per_month script 
+# are almost indentical except for the VALID_TSV_HEADER. Another script could 
+# be made for code resued. However, the duplicated code is short and there is 
+# only two files for this whole assignment, the duplicate is kept.
+
+# From head -n 1 Cyber_Security_Breaches_clean.tsv | tr -cs '[A-Za-z_]' ','
+VALID_TSV_HEADER=Name_of_Covered_Entity,State,Individuals_Affected,Date_of_Breach,Type_of_Breach,Location_of_Breached_Information,Summary,
+
+# Entry skipped must consist of anything other than tabs. Using ".*" to skip 
+# will not work because it can include tabs.
+NEG_TAB="[^\t]"
+SKIP_ENTRY="${NEG_TAB}*\t"
+
+# The regex for each date component and date to be used with sed
+# Month can be e.g 1, 9, 01, 09, 10, 12
+SED_REG_MONTH="\([1-9]\|0[1-9]\|1[012]\)"
+# Day can be 1, 9, 01, 09, 10, 19, 20, 29, 30, 31
+SED_REG_DAY="\([1-9]\|0[1-9]\|[12][0-9]\|3[01]\)"
+# Year can be e.g 0, 1, 9, 00, 01, 09, 10, 12, 79, 99, 49, 2000, 2001, 2015, 
+# 2079, 1989, 1999
+SED_REG_YEAR="\([0-9]\|[0-9][0-9]\|20[0-7][0-9]\|19[8-9][0-9]\)"
+SED_REG_DATE="${SED_REG_MONTH}\/${SED_REG_DAY}\/${SED_REG_YEAR}"
+
+# Make sure that at least one argument is passed
+if [[ -z $1 ]]
+then
+    1>&2 echo -e "Error, a file is required.\ntry ./preprocess -h for help".
+    exit 1
+fi
+
+# Calling for usage
+if [[ $1 = "-h" ]]
+then
+    echo "${USAGE}"
+    exit 0
+fi
+
+# Make sure file is not empty
+if [[ ! -s $1 ]]
+then
+    1>&2 echo "Error, input file $1 is empty."
+    exit 1
+fi
+
+# Convert tsv file header into csv format
+fileHeader=$(head -n 1 $1 | tr -cs '[A-Za-z_]' ',')
+
+# Make sure that the input tsv file has the correct header
+if [[ ! $fileHeader == $VALID_TSV_HEADER ]]
+then
+    1>&2 echo -e "The input file $1 does not have the correct header format.\n"
+    1>&2 echo "Correct header format: "
+    1>&2 echo -e $(echo $VALID_TSV_HEADER | tr ',' '    ')
+    exit 1
+fi
+
+# The tsv header will be ignored as part of the rules used in gawk and sed.
+# No file is created to store sed script, because there is only 2 expressions
+# to be used.
+sed \
+    -e "2,\${/^${SKIP_ENTRY}[A-Z][A-Z]\t.*$/!d}" \
+    -e "2,\${/^${SKIP_ENTRY}${SKIP_ENTRY}${SKIP_ENTRY}\(${SED_REG_DATE}\|${SED_REG_DATE} *- *${SED_REG_DATE}\)\t/!d}" $1 | \
+gawk -F "\t" -f preprocess_awk

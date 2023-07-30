@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+#
+# File:     breaches_per_month
+# Author:   Tao Hu
+# Date:     12/05/2023
+#
+# Purpose:  Performs simple data analysis on the input .tsv file. The analysis 
+#           aims to find if there is any pattern to the breaches across months, 
+#           for serveral years covered. The medain and median absolute deviation
+#            of all incidents across the 12 months will be calculated. The 
+#           output will contain the 12 differ months, the total incidents in 
+#           this month and a symbol either --, ++ or empty representing 1 MAD 
+#           below the median, 1 MAD above the median and within 1 MAD from the 
+#           median
+#           The outputs will be printed to the standard output
+#
+# Output Example:
+#           Jan 100 --
+#           Jan 300 ++
+#           Jan 200 
+
+USAGE="
+Usage:      ./breaches_per_month <file>
+            ./breaches_per_month -h
+
+-h          Displays the usage of this script
+
+file:       A tsv file, with a valid header described as below and data 
+            corresponding to the headers. As a tsv file, each field including 
+            the field names in the header are expected to be separated by a tab.
+            This is the file where the data cleaning will be applied on
+            
+            HEADER                                DATATYPE
+            Name_of_Covered_Entity                -String
+            State                                 -String of 2 captial letter
+            Individuals_Affected                  -Integer
+            Date_of_Breach                        -In d/m/y format
+            Type_of_Breach                        -String
+            Month                                 -Integer
+            Year                                  -Integer
+"
+
+# from head -n 1 Cyber_Security_Breaches_clean.tsv | tr -cs '[A-Za-z_]' ','
+VALID_TSV_HEADER="Name_of_Covered_Entity,State,Individuals_Affected,Date_of_Breach,Type_of_Breach,Month,Year,"
+
+# Make sure that at least one argument is passed
+if [[ -z $1 ]]
+then
+    1>&2 echo -e "Error, a file is required.\ntry ./breaches_per_month -h for help".
+    exit 1
+fi
+
+# Calling for usage
+if [[ $1 = "-h" ]]
+then
+    echo "${USAGE}"
+    exit 0
+fi
+
+# Make sure file is not empty
+if [[ ! -s $1 ]]
+then
+    1>&2 echo "Error, input file $1 is empty."
+    exit 1
+fi
+
+# Convert tsv file header into csv format
+fileHeader=$(head -n 1 $1 | tr -cs '[A-Za-z_]' ',')
+
+# Make sure that the input tsv file has the correct header
+if [[ ! $fileHeader == $VALID_TSV_HEADER ]]
+then
+    1>&2 echo -e "The input file $1 does not have the correct header format.\n"
+    1>&2 echo "Correct header format: "
+    1>&2 echo -e $(echo $VALID_TSV_HEADER | tr ',' '    ')
+    exit 1
+fi
+
+tail -n +2 $1 | gawk -F '\t' -f breaches_per_month_awk

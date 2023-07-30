@@ -1,0 +1,261 @@
+#!/usr/bin/env bash
+#
+# File:     cyber_breaches
+# Author:   Tao Hu
+# Date:     13/04/2023
+#
+# Purpose:  To perform a few basic data analysis task on tsv file that has a 
+#           specific order of header content with fields of certain datatypes.
+#           The header of the tsv file is expected contain names and orders the
+#           same as below.
+#           Fields of the tsv file are expected to follow the description of 
+#           the datatypes described.
+
+USAGE_ERROR="'cyber_breaches -h' for help."
+USAGE_HELP="
+Usage:    cyber_breaches <file> <options>
+          cyber_breaches -h
+          
+-h:       Displays the usage of this script.
+
+file:     A tsv file, with a valid header described as below and data 
+          corresponding to the headers. As a tsv file, each field including 
+          the field names in the header are expected to be separated by a tab.
+          
+          HEADER                                DATATYPE
+          Name_of_Covered_Entity                -String
+          State                                 -String of 2 captial letter
+          Individuals_Affected                  -Integer
+          Date_of_Breach                        -In d/m/y format
+          Type_of_Breach                        -String
+          Location_of_Breached_Information      -String
+          Summary                               -String
+          year                                  -Valid year in 4 digits
+          index                                 -Integer
+
+options:
+          maxstate    Output the state that has the largest number of 
+                      incidents across all years, and the corresponding count.
+          maxyear     Output the year with the greatest number of incidents 
+                      across all the states, and the corresponding count.
+          state_code  state_code consist of two capital letter. Output the max
+                       number of incidents of this state, and the count.
+          year        year consists of 2 digits. Ouput the state with the 
+                      largets number of incidents in this year, and the count.
+                      
+Examples:
+          cyber_breaches Cyber_Security_Breaches.tsv maxstate
+          cyber_breaches Cyber_Security_Breaches.tsv maxyear
+          cyber_breaches Cyber_Security_Breaches.tsv 2010
+          cyber_breaches Cyber_Security_Breaches.tsv TX
+"
+
+# Contains the column number of the corresponding header name.
+STATE_COL_N=2
+YEAR_COL_N=8
+
+# delimeter for splitting
+DELIM=","
+
+# valid header when tab is replaced with ','
+# generated with the following commands:
+# head -n 1 Cyber_Security_Breaches.tsv | tr -cs '[A-Za-z_]' ','
+VALID_HEADER_CSV="Name_of_Covered_Entity,State,Individuals_Affected,Date_of_Breach,Type_of_Breach,Location_of_Breached_Information,Summary,year,index,"
+
+# format for valid year
+# example "2013"
+F_YEAR="[0-9][0-9][0-9][0-9]"
+
+# format for valid state
+# example "CA"
+F_STATE="[A-Z][A-Z]"
+
+# filename of temporary file used by the program
+TMP_FN="_cyber_breaches_out_tmp"
+
+# print the usage of the script program
+if [[ "$#" -eq 1 && "$1" == "-h" ]]
+then
+    echo "${USAGE_HELP}"
+    exit 0
+fi
+
+# validate there are 2 arguments
+if [[ ! "$#" -eq 2 ]]
+then
+    1>&2 echo -e "${#} arguments received, expects exactly 2.\n${USAGE_ERROR}"
+    exit 1
+fi
+
+# just to store arguments in mre meaningful names
+file_name=$1
+opt=$2
+
+# validate the first argument is a valid file and is not empty
+if [[ ! -s "${file_name}" ]]
+then
+    1>&2 echo -e "Input file does not exist or is empty.\n${USAGE_ERROR}"
+    exit 1
+fi
+
+# validate that the file has a valid header
+if [[ ! $(head -n 1 ${file_name} | tr -cs '[A-Za-z_]' $DELIM) == "$VALID_HEADER_CSV" ]]
+then
+    1>&2 echo -e "The input file does not have the correct header format.\n"
+    1>&2 echo "Correct header format: "
+    1>&2 echo -e $(echo $VALID_HEADER_CSV | tr $DELIM "\t")
+    exit 1
+fi
+
+# validate that the file has at least one row of content not just one header
+if [[ ! $(wc -l ${file_name} | cut -d ' ' -f 1) -ge 2 ]]
+then
+    1>&2 echo "The input file does not have any data content."
+    exit 1
+fi
+
+# read the options and perform actions on the input file
+case $opt in
+    max*)
+        # the operations done and output for both maxstate and maxyear are very 
+        # similar. The code is almost identical except for some changes in 
+        # varaibles passed to other commands. Hence maxstate and maxyear are 
+        # combined. Moreover, there is special error output for max[field_name] 
+        # where the field_name is not valid one, currently only works on the 
+        # state and year as field name.
+
+        # var stands for variable/field
+        col_n=              # column number of the field
+        var_name=           # the name of the field
+        var_format=         # format of values in the field
+
+        # identify the field/variable to be processed and set the correct 
+        # variables. Either state or year where the option is maxstate or 
+        # maxyear. Any other max of anything will result in error output.
+        case $opt in
+            maxstate)
+                col_n=$STATE_COL_N
+                var_name="state"
+                var_format=$F_STATE
+            ;;
+            maxyear)
+                col_n=$YEAR_COL_N
+                var_name="year"
+                var_format=$F_YEAR
+            ;;
+            *)
+                1>&2 echo "The max commands are either maxstate or maxyear"
+                exit 1
+            ;;
+        esac
+
+        # this will produce a list of all the variable values that match the 
+        # intended variable format.
+        # steps: <keep only the column of the variable | remove the header or
+        # first line of the list | keep only data that matches the variable 
+        # format> and storing output in $TMP_FN
+        # $TMP_FN should contain a list of correct format of the varaibles 
+        # separated by new line.
+        #
+        # using -s option in cut to work only on rows that is separated with 
+        # tabs and to ensure working on the data of the specific columns
+        #
+        # used both '^' and '$' with grep to ensure that the content is exactly
+        # if variable/field is state, then $var_format is equal to $F_STATE
+        # e.g "CA" is valid, "CCA" is not
+        cut -s -f $col_n $file_name | tail -n +2 | grep "^${var_format}$" > $TMP_FN
+
+        # validate that there are content in $TMP_FN, empty file means that no 
+        # valid varaible contents are found
+        if [[ ! -s "$TMP_FN" ]]
+        then
+            1>&2 echo "Error, could not find a single row with a valid ${var_name}"
+            rm -f $TMP_FN
+            exit 1
+        fi
+        
+        # finds the variable content that repeated the most
+        # steps: <sort the content | remove duplicates and generated the count |
+        #  sort the list by the count in reverse order numerically | extract the
+        #  first line or the content with the biggest count | replace all space 
+        # with $DELIM>
+        #
+        # DELIM=','
+        # initial format: "      113 CA" = "------113-CA" where "-" is space
+        # final format: ",113,CA" = ",[count],[field_value]"
+        count_var=$(sort $TMP_FN | uniq -c | sort -r -n -k 1 | head -n 1 | tr -s ' ' $DELIM)
+        rm -f $TMP_FN
+
+        var=$(echo $count_var | cut -d $DELIM -f 3)
+        count=$(echo $count_var | cut -d $DELIM -f 2)
+
+        echo "${var_name} with greatest number of incidents is: ${var} with count ${count}"
+    ;;
+    $F_YEAR | $F_STATE)
+        # the code for both year and state are also the same except for some 
+        # variables, error messages and output. Hence some if statement are used
+        #  to get the correct varaibles and main operational codes are reused.
+
+        search_format=      # regex search format used by grep
+        error_msg=          # specific error message
+
+        # check with regular expression to identify if state or year is inputted
+        #  . else is used because entering here ensured that the second argument
+        #  is either in the correct year or state format
+        if [[ "$opt" =~ ${F_YEAR} ]]
+        then
+            search_format="^${F_STATE},${opt}$"
+            error_msg="Error, input year ${opt} is not found in file ${file_name}."
+        else
+            search_format="^${opt},${F_YEAR}$"
+            error_msg="Error, input state ${opt} is not found in file ${file_name}."
+        fi
+
+        # produces a list that contains only the year and state data of the 
+        # inputted tsv file.
+        # steps: <cut to keep only the columns that contains the state and year 
+        # content | remove the header or the first line | replace the tabs and 
+        # space with $DELIM | filter to only keep lines that matches 
+        # $search_format> storing the output in $TMP_FN
+        #
+        # -s ensures correct columns are read other wise empty
+        # replace tabs with $DELIM beacuse later on when the string is passed 
+        # the tab becomes space, not consistent.
+        cut -s -f ${STATE_COL_N},${YEAR_COL_N} ${file_name} | tail -n +2 | tr -s '[ \t]' $DELIM | grep $search_format > $TMP_FN
+
+        # ensure that the reuiqred data have being found
+        if [[ ! -s "$TMP_FN" ]]
+        then
+            1>&2 echo $error_msg
+            rm -f $TMP_FN
+            exit 1
+        fi
+
+        # finds the greaters occurance of field value pairs in $TMP_FN
+        # steps: <sort the list of contents | remove duplicate and generate 
+        # count | sort the list of contents by the count in reverse order 
+        # numerically | extract the first line or the state and year pair that 
+        # has the biggest count | replace spaces with $DELIM>
+        #
+        # DELIM=','
+        # intitial format: "     18 TX,2010"
+        # final format: ",18,TX,2010" = ",[count],[state],[year]"
+        count_state_year=$(sort $TMP_FN | uniq -c | sort -r -n -k 1 | head -n 1 | tr -s ' ' $DELIM)
+        rm -f $TMP_FN
+
+        count=$(echo $count_state_year | cut -d $DELIM -f 2)
+        state=$(echo $count_state_year | cut -d $DELIM -f 3)
+        year=$(echo $count_state_year | cut -d $DELIM -f 4)
+
+        if [[ "$opt" =~ $F_YEAR ]]
+        then
+            echo "State with greatest number of incidents for ${year} is in ${state} with count ${count}"
+        else
+            echo "Year with greatest number of incidents for ${state} is in ${year} with count ${count}"
+        fi
+    ;;
+    *)
+        1>&2 echo -e "Invalid options inputted.\n${USAGE_HELP}"
+        exit 1
+    ;;
+esac

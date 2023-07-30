@@ -1,0 +1,56 @@
+#!/usr/env/bin awk
+#
+# File:     preprocess_awk
+# Author:   Tao Hu
+# Date:     14/05/2023
+#
+# Purpose:  Perform the rest of the data cleaning for the input tsv file from 
+#           script preprocess. The data cleaning done here includes:
+#
+#           Creating new tsv header
+#           Drop rows which has Individuals_Affected smaller than 0
+#           Drop rows that do not have sufficient number of entries
+#           Replacing Type_of_Breach with the main breach recorded
+#           Creating a new field Month from Date_of_breach using the month 
+#           section of the first date recorded. The Month will be in normal 
+#           integer format without 0 being the first digit.
+#           Creating a new field Year from Date_of_breach using the year section
+#           of the first date recorded. The year will be in four digit format
+
+# The header row
+NR == 1 {
+    # New tsv header
+    printf("%s\t%s\t%s\t%s\t%s\t%s\t%s\n", $1, $2, $3, $4, $5, "Month", "Year");
+}
+
+# Field Summary might be empty which will cause NF become 6. So it is valid 
+# if NR is 6 or 7 and the sixth entry is not empty
+# $1 (Name_of_Covered_Entity) $5 (Type_of_Breaches) should also checked as not 
+# empty.
+NR != 1 && NF <= 7 && NF >= 6 && $1 && $5 && $6 && $3 >= 0 {
+    # Substitute '/' to ',' so one split will work
+    gsub("/", ",", $5);
+    # Split by ',' and pick first one ignore the rest
+    split($5, breaches, ",");
+    typeOfBreach = breaches[1];
+
+    # Date are verifed to be in correct formt from earlier sed scripts so now 
+    # the first item from split will be the month and third is the year.
+    split($4, splitDate, "/");
+    month = int(splitDate[1]);
+    year = int(splitDate[3]);
+    # Year should be guaranteed to be smaller than 100 from earlier sed but just
+    #  a double check. Greater or equal to 80 is considered in the 1900s, in the
+    #  tsv file provided there is only one year of 1997 in the 1990s and all 
+    # other in the 2000s. Smaller than 80 is then considered to be in the 2000s
+    if (year < 100) {
+        if (year >= 80) {
+            year += 1900;
+        } else {
+            year += 2000;
+        }
+    }
+
+    # New tsv row contents
+    printf("%s\t%s\t%s\t%s\t%s\t%s\t%s\n", $1, $2, $3, $4, typeOfBreach, month, year);
+}

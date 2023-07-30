@@ -1,0 +1,142 @@
+#!/usr/env/bin awk
+#
+# File:     breaches_per_month_awk
+# Author:   Tao Hu
+# Date:     12/05/2023
+#
+# Purpose:  This file contains the core gawk code used to analyse the input 
+#           tsv files recieved as argument to breaches_per_month. This file 
+#           should be called by breaches_per_month, where anti bugging will be 
+#           performed before the execution of this file.
+
+# Purpose:  Find the median value from the array arr
+#
+# Parameters:
+#   arr:    Array of Integer - The input array expected to contain a list of 
+#           integers
+#
+# Return: Integer - The median from the integer array arr
+function findMedian(arr) {
+    asort(arr, tempArr)
+
+    arrLen = length(arr)
+
+    if (arrLen % 2 == 0) {
+        return (tempArr[arrLen / 2] + tempArr[(arrLen / 2) + 1]) / 2
+    } else {
+        return tempArr[arrLen + 1] / 2
+    }
+}
+
+# Purpose:  Return the absolute value of input parmater val
+#
+# Parmaters:
+#   val:    Integer - The value to be returned as absolute
+#
+# Return:   Integer - The absolute value of val
+function abs(val) {
+    return val < 0 ? -val : val;
+}
+
+# Purpose:  Returns the median absolute deviation of this input array arr with 
+#           the provided meddian
+#
+# Parameters:
+#   arr:    Array of Integer - The array where MAD is calculated from
+#   median: Integer - The medain of the array arr
+#
+# Return:   Integer - The median absolute deviation of values in array arr.
+function findMAD(arr, median) {
+    asort(arr, tempArr);
+
+    for (ind in tempArr) {
+        tempArr[ind] = abs(tempArr[ind] - median);
+    }
+
+    return findMedian(tempArr);
+}
+
+# Purpose:  Returns the symbol representing the relationship between val and 
+#           median based on mad.
+# Parameters:
+#   val:    Integer - The value to be compared with
+#   median: Integer - The median value from the list val comes from
+#   mad:    Integer - The median absolute deviation from the list val comes from
+#
+# Return:   String - The symbol representing the relationship between val and 
+#           median. Empty string if val is within 1 mad from median, ++ if val 
+#           is 1 mad greater than median and -- if val is 1 mad smaler than 
+#           median.
+function getRelSymb(val, median, mad) {
+    if (val >= median + mad) return "++";
+    if (val <= median - mad) return "--";
+    return "";
+}
+
+# Purpose:  Displays a summary of the values in arr by using the median and mad 
+#           value. The summary will list all values in arr and the distance of 
+#           the value from median based on mad.
+#
+# Parameters:
+#   arr:    Array of Integer - The array containing values where summary is 
+#           genereated from
+#   median: Integer - The median of the values in arr
+#   mad:    The median absolute deviation of the values in arr
+#
+# Return:   None
+function displayTable(arr, median, mad) {
+    printf("%8s%8s%8s\n", "Month", "Total", "Symbol");
+
+    for (i = 1; i <= 12; i++) {
+        printf("%8s%8d%8s\n", getMonth(i), arr[i], getRelSymb(arr[i], median, mad));
+    }
+}
+# Purpose:  Return the english short form of the month name based on the input 
+#           integer val
+#
+# Parameters:
+#   val:    Integer - The month in numeric format from 1 to 12
+#
+# Return:   String - The short hand form of the month name corresponding to the 
+#           numeric month val
+function getMonth(val) {
+    switch (val) {
+        case 1: return "Jan";
+        case 2: return "Feb";
+        case 3: return "Mar";
+        case 4: return "Apr";
+        case 5: return "May";
+        case 6: return "Jun";
+        case 7: return "Jul";
+        case 8: return "Aug";
+        case 9: return "Sep";
+        case 10: return "Oct";
+        case 11: return "Nov";
+        case 12: return "Dec";
+        default: return "";
+    }
+}
+
+BEGIN {
+    # Explicitly define the month frequency counting array
+    for (i = 1; i <= 12; i++) {
+        monthFreq[i] = 0;
+    }
+}
+
+# Only record the frequency if it is in valid numeric month format. 1 to 12
+$6 >= 1 && $6 <= 12 {
+    monthFreq[$6]++;
+}
+
+END {
+    median = findMedian(monthFreq);
+    mad = findMAD(monthFreq, median);
+
+    printf("\n")
+    printf("%-12s%d\n", "Median:", median);
+    printf("%-12s%d\n", "MAD:", mad);
+    printf("\n")
+    displayTable(monthFreq, median, mad);
+    printf("\n")
+}
